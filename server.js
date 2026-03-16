@@ -1,134 +1,197 @@
-const http = require('http');
-const url = require('url');
+const http = require("http")
+const fs = require("fs")
+const url = require("url")
 
-let students = [];
+const PORT = 5000
+
+// function to read students from file
+function readStudents() {
+    try {
+        const data = fs.readFileSync("students.json")
+        return JSON.parse(data)
+    } catch (err) {
+        return []
+    }
+}
+
+// function to save students into file
+function saveStudents(data) {
+    fs.writeFileSync("students.json", JSON.stringify(data, null, 2))
+}
+
+// function to check if student data is valid
+function checkStudent(student) {
+
+    if (!student.name || !student.email || !student.course || !student.year) {
+        return "All fields are required"
+    }
+
+    if (!student.email.includes("@")) {
+        return "Email is not valid"
+    }
+
+    if (student.year < 1 || student.year > 4) {
+        return "Year must be between 1 and 4"
+    }
+
+    return null
+}
 
 const server = http.createServer((req, res) => {
 
-    res.setHeader('Content-Type', 'application/json');
+    res.setHeader("Content-Type", "application/json")
 
-    const parsedUrl = url.parse(req.url, true);
-    const path = parsedUrl.pathname;
-    const method = req.method;
+    const parsedUrl = url.parse(req.url, true)
+    const path = parsedUrl.pathname
+    const method = req.method
+
+    let students = readStudents()
 
     // GET all students
-    if (path === '/students' && method === 'GET') {
+    if (method === "GET" && path === "/students") {
 
-        res.end(JSON.stringify(students));
-
-    }
-
-    // POST create student
-    else if (path === '/students' && method === 'POST') {
-
-        let body = '';
-
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-
-        req.on('end', () => {
-
-            const data = JSON.parse(body);
-
-            const student = {
-                id: Date.now().toString(),
-                name: data.name,
-                email: data.email,
-                course: data.course,
-                year: data.year
-            };
-
-            students.push(student);
-
-            res.statusCode = 201;
-            res.end(JSON.stringify(student));
-        });
-
+        res.writeHead(200)
+        res.end(JSON.stringify({
+            success: true,
+            data: students
+        }))
     }
 
     // GET single student
-    else if (path.startsWith('/students/') && method === 'GET') {
+    else if (method === "GET" && path.startsWith("/students/")) {
 
-        const id = path.split('/')[2];
+        const id = path.split("/")[2]
 
-        const student = students.find(s => s.id === id);
+        const student = students.find(s => s.id == id)
 
         if (!student) {
-
-            res.statusCode = 404;
-            return res.end(JSON.stringify({
+            res.writeHead(404)
+            res.end(JSON.stringify({
+                success: false,
                 message: "Student not found"
-            }));
-
+            }))
+            return
         }
 
-        res.end(JSON.stringify(student));
-
+        res.writeHead(200)
+        res.end(JSON.stringify({
+            success: true,
+            data: student
+        }))
     }
 
-    // PUT update student
-    else if (path.startsWith('/students/') && method === 'PUT') {
+    // ADD new student
+    else if (method === "POST" && path === "/students") {
 
-        const id = path.split('/')[2];
+        let body = ""
 
-        let body = '';
+        req.on("data", chunk => {
+            body += chunk
+        })
 
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
+        req.on("end", () => {
 
-        req.on('end', () => {
+            const newStudent = JSON.parse(body)
 
-            const data = JSON.parse(body);
+            const error = checkStudent(newStudent)
 
-            const student = students.find(s => s.id === id);
-
-            if (!student) {
-
-                res.statusCode = 404;
-                return res.end(JSON.stringify({
-                    message: "Student not found"
-                }));
-
+            if (error) {
+                res.writeHead(400)
+                res.end(JSON.stringify({
+                    success: false,
+                    message: error
+                }))
+                return
             }
 
-            student.name = data.name;
-            student.email = data.email;
-            student.course = data.course;
-            student.year = data.year;
+            newStudent.id = Date.now()
 
-            res.end(JSON.stringify(student));
+            students.push(newStudent)
 
-        });
+            saveStudents(students)
 
+            res.writeHead(201)
+            res.end(JSON.stringify({
+                success: true,
+                data: newStudent
+            }))
+        })
+    }
+
+    // UPDATE student
+    else if (method === "PUT" && path.startsWith("/students/")) {
+
+        const id = path.split("/")[2]
+
+        let body = ""
+
+        req.on("data", chunk => {
+            body += chunk
+        })
+
+        req.on("end", () => {
+
+            const updatedData = JSON.parse(body)
+
+            const studentIndex = students.findIndex(s => s.id == id)
+
+            if (studentIndex === -1) {
+                res.writeHead(404)
+                res.end(JSON.stringify({
+                    success: false,
+                    message: "Student not found"
+                }))
+                return
+            }
+
+            students[studentIndex] = { ...students[studentIndex], ...updatedData }
+
+            saveStudents(students)
+
+            res.writeHead(200)
+            res.end(JSON.stringify({
+                success: true,
+                data: students[studentIndex]
+            }))
+        })
     }
 
     // DELETE student
-    else if (path.startsWith('/students/') && method === 'DELETE') {
+    else if (method === "DELETE" && path.startsWith("/students/")) {
 
-        const id = path.split('/')[2];
+        const id = path.split("/")[2]
 
-        students = students.filter(s => s.id !== id);
+        const newStudents = students.filter(s => s.id != id)
 
+        if (newStudents.length === students.length) {
+            res.writeHead(404)
+            res.end(JSON.stringify({
+                success: false,
+                message: "Student not found"
+            }))
+            return
+        }
+
+        saveStudents(newStudents)
+
+        res.writeHead(200)
         res.end(JSON.stringify({
+            success: true,
             message: "Student deleted"
-        }));
-
+        }))
     }
 
+    // if route not found
     else {
-
-        res.statusCode = 404;
-
+        res.writeHead(404)
         res.end(JSON.stringify({
+            success: false,
             message: "Route not found"
-        }));
-
+        }))
     }
 
-});
+})
 
-server.listen(5000, () => {
-    console.log("Server running on port 5000");
-});
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`)
+})
